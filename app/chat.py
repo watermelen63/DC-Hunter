@@ -34,9 +34,7 @@ async def generate_reply(prompt: str) -> str:
             messages = memory,
         )
         reply = response.message.content
-
         memory.append({"role": "assistant", "content": reply})
-
         return f"{reply}\n\nby {model_id}"
     
     except Exception as e:
@@ -50,6 +48,8 @@ async def on_message(message):
     
     if bot.user.mentioned_in(message):
         prompt = message.content.replace(f'<@{bot.user.id}>', '').strip()
+
+        print (prompt)
 
         if not prompt:
             await message.reply("Anything help?")
