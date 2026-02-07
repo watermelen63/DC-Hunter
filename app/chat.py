@@ -22,17 +22,21 @@ SYSTEM_PROMT = """
 設法探出這個人的個性
 """
 
-async def generate_reply(promt: str) -> str:
+memory = [{"role": "system", "content": SYSTEM_PROMT}]
+
+async def generate_reply(prompt: str) -> str:
+    memory.append({"role": "user", "content": prompt})
+
     try:
         response = await asyncio.to_thread(
             ollama.chat,
             model = model_id,
-            messages = [
-                {"role": "system", "content": SYSTEM_PROMT},
-                {"role": "user", "content": promt}
-            ]
+            messages = memory,
         )
         reply = response.message.content
+
+        memory.append({"role": "assistant", "content": reply})
+
         return f"{reply}\n\nby {model_id}"
     
     except Exception as e:
