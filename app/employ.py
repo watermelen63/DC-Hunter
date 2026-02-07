@@ -1,6 +1,6 @@
 import discord
 from discord import app_commands
-from discord.app_commands import Choice
+from discord import Choice
 
 bot = discord.Bot(intents = discord.Intents.all())
 
