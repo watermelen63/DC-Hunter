@@ -8,14 +8,13 @@ from dotenv import load_dotenv
 load_dotenv()
 DISCORD_TOKEN = os.getenv("DC_HUNTER_TOKEN")
 
-
 USER_TRAITS = "user_traits.json"
 RECORDS_FILE = "chat_records.json"
 
 SYSTEM_PROMPT = """
-你是個專業的人格分析師，工作為分析我們指派的json檔中的內容
+你是一個人類性格分析師，透過人類之間的對話，來去分析人類的性格，並分成完美主義者、助人者、成就者、個人主義者、觀察者、忠誠者、樂觀者、和平主義者、挑戰者。各類人的定義放在define.json中。你必須分析對話，去檢索其中的關鍵字，並給予一個最符合的答案。
 """
-TRAITS = []
+TRAITS = ["完美主義者","助人者","成就者","個人主義者","觀察者","忠誠者","樂觀者","和平主義者","挑戰者"]
 
 model_id = "deepseek-v3.1:671b-cloud"
 
