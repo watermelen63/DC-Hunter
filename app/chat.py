@@ -1,27 +1,26 @@
 # chat.py
-import os
 import asyncio
-import logging
 import json
+import logging
+import os
 
 import discord
 from dotenv import load_dotenv
 import ollama
 
+
 def setup(bot: discord.Bot):
     load_dotenv()
     model_id = "gemma3:4b"
 
-    # 防止多次 setup
+    # Avoid duplicate setup
     if getattr(bot, "_chat_setup_done", False):
         return
     bot._chat_setup_done = True
 
     SYSTEM_PROMPT = """
-你是一個擅長使用話術讓他人放下防備，並且對你坦露心聲的人，你可以用10句話。
-透過聊天對話的方式，並且回覆時不能少於兩句話。
-如果要問問題，每次最多只能提出一個問題。你的目的要試圖讓對方暴露出它的真實性格。
-如果知道了對方的個性，單單打出一個end並結束。
+你是友善且自然的聊天助手。請和新加入的使用者對話，最多 10 次。
+你需要詢問對方的興趣與特質，並鼓勵他描述自己。
 """
 
     memory = [{"role": "system", "content": SYSTEM_PROMPT}]
@@ -30,25 +29,26 @@ def setup(bot: discord.Bot):
     CHAT_RECORDS_FILE = "data/chat_records.json"
     os.makedirs("data", exist_ok=True)
 
-    # 初始化 JSON 檔案
+    # Ensure JSON files exist
     if not os.path.exists(CHAT_RUN_FILE) or os.stat(CHAT_RUN_FILE).st_size == 0:
         with open(CHAT_RUN_FILE, "w", encoding="utf-8") as f:
-            json.dump({
-                "user_id": "",
-                "welcomed_users": [],
-                "user_count": {}
-            }, f, ensure_ascii=False, indent=2)
+            json.dump(
+                {"user_id": "", "welcomed_users": [], "user_count": {}},
+                f,
+                ensure_ascii=False,
+                indent=2,
+            )
 
     if not os.path.exists(CHAT_RECORDS_FILE) or os.stat(CHAT_RECORDS_FILE).st_size == 0:
         with open(CHAT_RECORDS_FILE, "w", encoding="utf-8") as f:
-            json.dump({
-                "all_messages": []
-            }, f, ensure_ascii=False, indent=2)
+            json.dump(
+                {"all_messages": [], "user_id": "", "user_name": "", "analysis_status": "pending"},
+                f,
+                ensure_ascii=False,
+                indent=2,
+            )
 
-    # ----------------------------
-    # AI 回覆生成
-    # ----------------------------
-    async def generate_reply(prompt: str, timesf: int) -> str:
+    async def generate_reply(prompt: str, remaining: int) -> str:
         memory.append({"role": "user", "content": prompt})
         try:
             response = await asyncio.to_thread(
@@ -58,33 +58,31 @@ def setup(bot: discord.Bot):
             )
             reply = response.message.content
             memory.append({"role": "assistant", "content": reply})
-            return f"{reply}\n\nby {model_id} \n剩:{timesf}題"
+            return f"{reply}\n\nby {model_id}\n剩餘 {remaining} 次"
         except Exception as e:
-            logging.error(f"Ollama模型回覆失敗: {e}")
+            logging.error(f"Ollama chat error: {e}")
             return f"AI 回覆失敗\nby {model_id}"
 
-    # ----------------------------
-    # 將對話寫入 chat_records.json
-    # ----------------------------
-    async def enter_json(ai_text: str, user_text: str):
+    async def enter_json(ai_text: str, user_text: str, user_id: str, user_name: str):
         try:
             with open(CHAT_RECORDS_FILE, "r", encoding="utf-8") as f:
                 data = json.load(f)
         except json.JSONDecodeError:
-            data = {"all_messages": []}
+            data = {"all_messages": [], "user_id": "", "user_name": "", "analysis_status": "pending"}
 
+        data.setdefault("all_messages", [])
         data["all_messages"].append({"ai": ai_text, "user": user_text})
+        data["user_id"] = user_id
+        data["user_name"] = user_name
+        data["analysis_status"] = "pending"
 
         with open(CHAT_RECORDS_FILE, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
 
-    # ----------------------------
-    # 新人加入事件
-    # ----------------------------
     @bot.event
     async def on_member_join(member):
-        DISCORD_AI_CHAT_CHANNEL_ID = 1469663806870524127
-        ai_chat = bot.get_channel(DISCORD_AI_CHAT_CHANNEL_ID)
+        WELCOME_CHANNEL_ID = 1469663806870524127
+        ai_chat = bot.get_channel(WELCOME_CHANNEL_ID)
         if not ai_chat:
             return
 
@@ -97,14 +95,16 @@ def setup(bot: discord.Bot):
         data.setdefault("welcomed_users", [])
         data.setdefault("user_count", {})
 
-        # 已歡迎過就不再送訊息
         if str(member.id) in data["welcomed_users"]:
             return
 
-        welcome_msg = f"{member.mention} WELCOME JOIN👋\n請你描述一下你自己吧~~~"
+        welcome_msg = (
+            f"{member.mention} 歡迎加入！\n"
+            "請在此頻道和我聊天 10 次喔～\n"
+            "先告訴我你的興趣與你覺得自己的特質是什麼？"
+        )
         await ai_chat.send(welcome_msg)
 
-        # 設定目前對話使用者
         data["user_id"] = str(member.id)
         data["welcomed_users"].append(str(member.id))
         data["user_count"].setdefault(str(member.id), 0)
@@ -112,11 +112,8 @@ def setup(bot: discord.Bot):
         with open(CHAT_RUN_FILE, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
 
-        print(f"新使用者加入: {member.id}")
+        print(f"Welcomed user {member.id}")
 
-    # ----------------------------
-    # 使用者訊息事件
-    # ----------------------------
     @bot.event
     async def on_message(message):
         if message.author == bot.user:
@@ -134,36 +131,31 @@ def setup(bot: discord.Bot):
 
         user_id = str(message.author.id)
 
-        # 只處理目前設定的使用者
+        # Only respond to the current new user
         if user_id != data.get("user_id"):
             return
 
-        # 檢查是否已達 10 次
         if data["user_count"].get(user_id, 0) >= 10:
-            await message.reply("你已經回答了 10 次問題，對話結束囉！")
+            await message.reply("你已完成 10 次對話，之後將進行分析。")
             return
 
-        prompt = message.content.replace(f'<@{bot.user.id}>', '').strip()
+        prompt = message.content.replace(f"<@{bot.user.id}>", "").strip()
         if not prompt:
-            await message.reply("請輸入訊息喔！")
+            await message.reply("請輸入內容再試一次。")
             return
 
-        # AI 生成回覆
         thinking_msg = await message.reply("Thinking~~~")
         try:
-            timesf = 10 - data["user_count"].get(user_id, 0)  # 剩餘次數
-            answer = await asyncio.wait_for(generate_reply(prompt, timesf=timesf), timeout=30.0)
+            remaining = 10 - data["user_count"].get(user_id, 0)
+            answer = await asyncio.wait_for(generate_reply(prompt, remaining=remaining), timeout=30.0)
         except Exception as e:
-            logging.error(f"AI 回覆失敗: {e}")
-            answer = "Something wrong."
+            logging.error(f"AI reply error: {e}")
+            answer = "Something went wrong."
 
-        # 寫入對話紀錄
-        await enter_json(answer, prompt)
+        await enter_json(answer, prompt, user_id=user_id, user_name=str(message.author))
 
-        # 更新對話次數
         data["user_count"][user_id] = data["user_count"].get(user_id, 0) + 1
         with open(CHAT_RUN_FILE, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
 
-        # 編輯訊息顯示 AI 回覆
         await thinking_msg.edit(content=answer)
