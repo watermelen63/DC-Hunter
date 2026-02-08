@@ -1,6 +1,10 @@
 import discord
 import os
 import json
+import random
+import chat
+import analysis
+import employ
 from dotenv import load_dotenv
 import chat
 
