@@ -41,7 +41,11 @@ async def check_traits(ctx):
         Choice(name = "和平主義者", value = "peacemaker"),
     ]
 )
-async def choose(self, interaction=discord.Interaction):
-    
-    
-    await interaction.response.send_message(f"你想要找的人有這些：")
+async def choose(interaction:discord.Interaction, personality: Choice[str]):
+    user_list = DEFINE_TRAITS.get(personality.value, [])
+    display_name = personality.name
+    if not user_list:
+        users_text = "目前沒有符合此人格特質的人"
+    else:
+        users_text = "\n".join(user_list)
+    await interaction.response.send_message(f"**你想要找的人（{display_name}）有這些：**\n{users_text}")
