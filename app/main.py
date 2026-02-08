@@ -5,6 +5,9 @@ import logging
 import ollama
 import json
 import random
+import chat
+import analysis
+import employ
 from dotenv import load_dotenv
 
 app = discord.Bot(intents = discord.Intents.all())
