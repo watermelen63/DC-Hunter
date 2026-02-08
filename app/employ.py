@@ -1,51 +1,92 @@
 import json
+import os
+
 import discord
-from discord import app_commands, Choice
 
-with open("data/define_traits.json", "r", encoding="utf-8") as f:
-    DEFINE_TRAITS = json.load(f)
+TRAITS = [
+    "perfectionist",
+    "helper",
+    "achiever",
+    "individualist",
+    "investigator",
+    "loyalist",
+    "enthusiast",
+    "challenger",
+    "peacemaker",
+]
 
-bot = discord.Bot(intents=discord.Intents.all())
+DEFINE_TRAITS_FILE = "data/define_traits.json"
+USER_TRAITS_FILE = "data/user_traits.json"
 
 
-@bot.slash_command(name = "查看人格定義", description = "輸入此指令後，DC_Hunter會輸出那九種人格的定義")
-async def check_traits(ctx):
-    # 因為內容太長，我們建立多個 Embed 來避免超過 Discord 限制
-    embeds = []
-    
-    # 將九種人格分成幾個 Embed 發送（例如每 3 個一組，或是一個大 Embed 包含全部）
-    main_embed = discord.Embed(title="📜 九型人格完整定義總覽", color=discord.Color.blue())
-    
-    for key, value in DEFINE_TRAITS.items():
-        main_embed.add_field(
-            name=f"【{key.capitalize()}】",
-            value=value[:1024], # 確保不超過單個 field 限制
-            inline=False
-        )
-    
-    await ctx.respond(embed=main_embed)
-    #await 
+def _load_define_traits():
+    if os.path.exists(DEFINE_TRAITS_FILE):
+        try:
+            with open(DEFINE_TRAITS_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return {}
+    return {}
 
-@app_commands.command(name = "choose", description = "你需要什麼性格的人")
-@app_commands.describe(personality = "選擇個性")
-@app_commands.choices(
-    personality = [
-        Choice(name = "完美主義者", value = "perfectionist"),
-        Choice(name = "助人者", value = "helper"),
-        Choice(name = "成就者", value = "achiever"),
-        Choice(name = "個人主義者", value = "individualist"),
-        Choice(name = "探索者", value = "investigator"),
-        Choice(name = "忠誠者", value = "loyalist"),
-        Choice(name = "樂觀者", value = "enthusiast"),
-        Choice(name = "挑戰者", value = "challenger"),
-        Choice(name = "和平主義者", value = "peacemaker"),
-    ]
-)
-async def choose(interaction:discord.Interaction, personality: Choice[str]):
-    user_list = DEFINE_TRAITS.get(personality.value, [])
-    display_name = personality.name
-    if not user_list:
-        users_text = "目前沒有符合此人格特質的人"
-    else:
-        users_text = "\n".join(user_list)
-    await interaction.response.send_message(f"**你想要找的人（{display_name}）有這些：**\n{users_text}")
+
+def _load_user_traits():
+    if os.path.exists(USER_TRAITS_FILE):
+        try:
+            with open(USER_TRAITS_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return {}
+    return {}
+
+
+def setup(bot: discord.Bot):
+    if getattr(bot, "_employ_setup_done", False):
+        return
+    bot._employ_setup_done = True
+
+    @bot.slash_command(name="traits", description="查看九型人格特質簡介")
+    async def traits(ctx: discord.ApplicationContext):
+        define_traits = _load_define_traits()
+        if not define_traits:
+            await ctx.respond("目前沒有特質說明。")
+            return
+
+        embed = discord.Embed(title="九型人格特質簡介", color=discord.Color.blue())
+        for key, value in define_traits.items():
+            title = key.capitalize()
+            embed.add_field(name=title, value=value[:1024], inline=False)
+
+        await ctx.respond(embed=embed)
+
+    @bot.slash_command(name="find_employ", description="選擇特質並找出對應的用戶")
+    async def find_employ(
+        ctx: discord.ApplicationContext,
+        trait: discord.Option(
+            str,
+            "選擇你要找的特質",
+            choices=TRAITS,
+        ),
+    ):
+        trait = trait.lower().strip()
+
+        traits_data = _load_user_traits()
+        users = traits_data.get(trait, [])
+
+        if not users:
+            await ctx.respond(f"目前沒有 {trait} 的用戶資料。")
+            return
+
+        names = []
+        for item in users:
+            user_id = item.get("user_id")
+            user_name = item.get("user_name")
+            if user_name:
+                names.append(user_name)
+            elif user_id:
+                names.append(f"<@{user_id}>")
+
+        if not names:
+            await ctx.respond(f"目前沒有 {trait} 的用戶資料。")
+            return
+
+        await ctx.respond(f"**{trait.capitalize()}** 的用戶：\n" + "\n".join(names))
